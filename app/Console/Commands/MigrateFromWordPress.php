@@ -7,6 +7,7 @@ use App\Models\Book;
 use App\Models\Category;
 use App\Models\Course;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -58,34 +59,67 @@ class MigrateFromWordPress extends Command
         $this->info('Migration completed successfully!');
     }
 
-    protected function wpTable(string $table)
+    private function collect(string $table): Collection
     {
         if ($this->dump) {
             return collect($this->dump[$table] ?? []);
         }
-        return DB::connection('wordpress')->table($table);
+        return collect(DB::connection('wordpress')->table($table)->get()->map(fn($r) => (array) $r));
+    }
+
+    private function first(string $table, array $conditions): ?array
+    {
+        $rows = $this->collect($table);
+        foreach ($conditions as $key => $value) {
+            $rows = $rows->where($key, $value);
+        }
+        return $rows->first();
+    }
+
+    private function pluck(string $table, string $valueCol, string $keyCol, array $conditions = []): array
+    {
+        $rows = $this->collect($table);
+        foreach ($conditions as $key => $value) {
+            $rows = $rows->where($key, $value);
+        }
+        return $rows->pluck($valueCol, $keyCol)->toArray();
+    }
+
+    private function getPostMeta(int $postId): array
+    {
+        return $this->pluck('postmeta', 'meta_value', 'meta_key', ['post_id' => $postId]);
     }
 
     protected function migrateCourseCategories(): void
     {
         $this->info('Migrating course categories...');
 
-        $categories = $this->wpTable('terms')
-            ->join('term_taxonomy', 'terms.term_id', '=', 'term_taxonomy.term_id')
-            ->where('term_taxonomy.taxonomy', 'course-category')
-            ->select('terms.*', 'term_taxonomy.description')
-            ->get();
+        $terms = $this->collect('terms');
+        $taxonomies = $this->collect('term_taxonomy');
 
-        $bar = $this->output->createProgressBar(count($categories));
+        $categories = $terms->filter(function ($term) use ($taxonomies) {
+            $tax = $taxonomies->firstWhere('term_id', $term['term_id']);
+            return $tax && ($tax['taxonomy'] ?? '') === 'course-category';
+        })->map(function ($term) use ($taxonomies) {
+            $tax = $taxonomies->firstWhere('term_id', $term['term_id']);
+            return [
+                'term_id' => $term['term_id'],
+                'name' => $term['name'],
+                'slug' => $term['slug'],
+                'description' => $tax['description'] ?? '',
+            ];
+        });
+
+        $bar = $this->output->createProgressBar($categories->count());
         $bar->start();
 
         foreach ($categories as $cat) {
             Category::updateOrCreate(
-                ['wp_id' => $cat->term_id],
+                ['wp_id' => $cat['term_id']],
                 [
-                    'name' => $cat->name,
-                    'slug' => $cat->slug,
-                    'description' => $cat->description ?? '',
+                    'name' => $cat['name'],
+                    'slug' => $cat['slug'],
+                    'description' => $cat['description'] ?? '',
                     'type' => 'course',
                 ]
             );
@@ -94,55 +128,52 @@ class MigrateFromWordPress extends Command
 
         $bar->finish();
         $this->newLine();
-        $this->info('Migrated ' . count($categories) . ' categories.');
+        $this->info('Migrated ' . $categories->count() . ' categories.');
     }
 
     protected function migrateCourses(): void
     {
         $this->info('Migrating courses...');
 
-        $posts = $this->wpTable('posts')
+        $posts = $this->collect('posts')
             ->where('post_type', 'courses')
-            ->where('post_status', 'publish')
-            ->get();
+            ->where('post_status', 'publish');
 
-        $bar = $this->output->createProgressBar(count($posts));
+        $bar = $this->output->createProgressBar($posts->count());
         $bar->start();
 
         foreach ($posts as $post) {
-            $meta = $this->getPostMeta($post->ID);
+            $meta = $this->getPostMeta($post['ID']);
 
             $categoryId = null;
-            $termRel = $this->wpTable('term_relationships')
-                ->join('term_taxonomy', 'term_relationships.term_taxonomy_id', '=', 'term_taxonomy.term_taxonomy_id')
-                ->where('term_relationships.object_id', $post->ID)
-                ->where('term_taxonomy.taxonomy', 'course-category')
-                ->first();
+            $termRel = $this->first('term_relationships', ['object_id' => $post['ID']]);
 
             if ($termRel) {
-                $category = Category::where('wp_id', $termRel->term_id)->first();
-                $categoryId = $category?->id;
+                $tax = $this->first('term_taxonomy', [
+                    'term_taxonomy_id' => $termRel['term_taxonomy_id'],
+                    'taxonomy' => 'course-category',
+                ]);
+
+                if ($tax) {
+                    $category = Category::where('wp_id', $tax['term_id'])->first();
+                    $categoryId = $category?->id;
+                }
             }
 
             $thumbnailId = $meta['_thumbnail_id'] ?? null;
             $thumbnailUrl = null;
             if ($thumbnailId) {
-                $thumbnailPost = collect($this->dump ? $this->dump['posts'] : null)
-                    ->firstWhere('ID', $thumbnailId);
-
-                if (!$thumbnailPost) {
-                    $thumbnailPost = $this->wpTable('posts')->where('ID', $thumbnailId)->first();
-                }
-                $thumbnailUrl = $thumbnailPost?->guid;
+                $thumbPost = $this->first('posts', ['ID' => (int) $thumbnailId]);
+                $thumbnailUrl = $thumbPost['guid'] ?? null;
             }
 
             Course::updateOrCreate(
-                ['wp_id' => $post->ID],
+                ['wp_id' => $post['ID']],
                 [
-                    'title' => html_entity_decode($post->post_title),
-                    'slug' => $post->post_name ?: Str::slug($post->post_title),
-                    'description' => $post->post_content,
-                    'excerpt' => strip_tags($post->post_excerpt ?: ''),
+                    'title' => html_entity_decode($post['post_title']),
+                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'description' => $post['post_content'],
+                    'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'benefits' => $meta['_tutor_course_benefits'] ?? null,
                     'target_audience' => $meta['_tutor_course_target_audience'] ?? null,
                     'requirements' => $meta['_tutor_course_requirements'] ?? null,
@@ -159,30 +190,29 @@ class MigrateFromWordPress extends Command
 
         $bar->finish();
         $this->newLine();
-        $this->info('Migrated ' . count($posts) . ' courses.');
+        $this->info('Migrated ' . $posts->count() . ' courses.');
     }
 
     protected function migrateBooks(): void
     {
         $this->info('Migrating books...');
 
-        $posts = $this->wpTable('posts')
+        $posts = $this->collect('posts')
             ->where('post_type', 'books')
-            ->where('post_status', 'publish')
-            ->get();
+            ->where('post_status', 'publish');
 
-        $bar = $this->output->createProgressBar(count($posts));
+        $bar = $this->output->createProgressBar($posts->count());
         $bar->start();
 
         foreach ($posts as $post) {
-            $meta = $this->getPostMeta($post->ID);
+            $meta = $this->getPostMeta($post['ID']);
 
             Book::updateOrCreate(
-                ['wp_id' => $post->ID],
+                ['wp_id' => $post['ID']],
                 [
-                    'title' => html_entity_decode($post->post_title),
-                    'slug' => $post->post_name ?: Str::slug($post->post_title),
-                    'description' => $post->post_content,
+                    'title' => html_entity_decode($post['post_title']),
+                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'description' => $post['post_content'],
                     'author' => $meta['wbg_author'] ?? null,
                     'publisher' => $meta['wbg_publisher'] ?? null,
                     'file_path' => $meta['wbg_download_link'] ?? null,
@@ -194,46 +224,41 @@ class MigrateFromWordPress extends Command
 
         $bar->finish();
         $this->newLine();
-        $this->info('Migrated ' . count($posts) . ' books.');
+        $this->info('Migrated ' . $posts->count() . ' books.');
     }
 
     protected function migrateArticles(): void
     {
         $this->info('Migrating articles...');
 
-        $posts = $this->wpTable('posts')
+        $posts = $this->collect('posts')
             ->where('post_type', 'post')
             ->where('post_status', 'publish')
-            ->where('post_title', 'LIKE', '%' . $this->articleTitleFilter . '%')
-            ->get();
+            ->filter(fn($p) => str_contains($p['post_title'] ?? '', $this->articleTitleFilter));
 
-        $bar = $this->output->createProgressBar(count($posts));
+        $bar = $this->output->createProgressBar($posts->count());
         $bar->start();
 
         foreach ($posts as $post) {
+            $meta = $this->getPostMeta($post['ID']);
+
             $thumbnailUrl = null;
-            $thumbnailId = $this->getPostMetaValue($post->ID, '_thumbnail_id');
-
+            $thumbnailId = $meta['_thumbnail_id'] ?? null;
             if ($thumbnailId) {
-                $thumbPost = collect($this->dump ? $this->dump['posts'] : null)
-                    ->firstWhere('ID', $thumbnailId);
-
-                if (!$thumbPost && !$this->dump) {
-                    $thumbPost = $this->wpTable('posts')->where('ID', $thumbnailId)->first();
-                }
-                $thumbnailUrl = $thumbPost?->guid;
+                $thumbPost = $this->first('posts', ['ID' => (int) $thumbnailId]);
+                $thumbnailUrl = $thumbPost['guid'] ?? null;
             }
 
             Article::updateOrCreate(
-                ['wp_id' => $post->ID],
+                ['wp_id' => $post['ID']],
                 [
-                    'title' => html_entity_decode($post->post_title),
-                    'slug' => $post->post_name ?: Str::slug($post->post_title),
-                    'content' => $post->post_content,
-                    'excerpt' => strip_tags($post->post_excerpt ?: ''),
+                    'title' => html_entity_decode($post['post_title']),
+                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'content' => $post['post_content'],
+                    'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'featured_image' => $thumbnailUrl,
                     'is_published' => true,
-                    'published_at' => $post->post_date,
+                    'published_at' => $post['post_date'],
                 ]
             );
             $bar->advance();
@@ -241,27 +266,6 @@ class MigrateFromWordPress extends Command
 
         $bar->finish();
         $this->newLine();
-        $this->info('Migrated ' . count($posts) . ' articles.');
-    }
-
-    private function getPostMeta($postId): array
-    {
-        if ($this->dump) {
-            $rows = collect($this->dump['postmeta'] ?? [])
-                ->where('post_id', $postId);
-            return $rows->pluck('meta_value', 'meta_key')->toArray();
-        }
-
-        return DB::connection('wordpress')
-            ->table('postmeta')
-            ->where('post_id', $postId)
-            ->pluck('meta_value', 'meta_key')
-            ->toArray();
-    }
-
-    private function getPostMetaValue($postId, string $key): ?string
-    {
-        $meta = $this->getPostMeta($postId);
-        return $meta[$key] ?? null;
+        $this->info('Migrated ' . $posts->count() . ' articles.');
     }
 }
