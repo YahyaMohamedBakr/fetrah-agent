@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Category extends Model
+{
+    protected $fillable = [
+        'name',
+        'slug',
+        'description',
+        'type',
+        'wp_id',
+        'sort_order',
+    ];
+
+    public function courses()
+    {
+        return $this->hasMany(Course::class);
+    }
+
+    public function books()
+    {
+        return $this->hasMany(Book::class);
+    }
+
+    public function articles()
+    {
+        return $this->hasMany(Article::class);
+    }
+}
