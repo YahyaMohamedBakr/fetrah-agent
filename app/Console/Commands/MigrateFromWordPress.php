@@ -90,6 +90,19 @@ class MigrateFromWordPress extends Command
         return $this->pluck('postmeta', 'meta_value', 'meta_key', ['post_id' => $postId]);
     }
 
+    private function makeSlug(array $post): string
+    {
+        $slug = $post['post_name'] ?? '';
+        if (!$slug) {
+            return Str::slug($post['post_title']);
+        }
+        if (str_contains($slug, '%')) {
+            $slug = urldecode($slug);
+        }
+        $slug = Str::slug($slug);
+        return $slug ?: 'post-' . $post['ID'];
+    }
+
     protected function migrateCourseCategories(): void
     {
         $this->info('Migrating course categories...');
@@ -171,7 +184,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
+                    'slug' => Str::limit($this->makeSlug($post), 245, ''),
                     'description' => $post['post_content'],
                     'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'benefits' => $meta['_tutor_course_benefits'] ?? null,
@@ -211,7 +224,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
+                    'slug' => Str::limit($this->makeSlug($post), 245, ''),
                     'description' => $post['post_content'],
                     'author' => $meta['wbg_author'] ?? null,
                     'publisher' => $meta['wbg_publisher'] ?? null,
@@ -253,7 +266,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
+                    'slug' => Str::limit($this->makeSlug($post), 245, ''),
                     'content' => $post['post_content'],
                     'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'featured_image' => $thumbnailUrl,
