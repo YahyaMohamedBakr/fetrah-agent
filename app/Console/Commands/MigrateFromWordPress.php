@@ -171,7 +171,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
                     'description' => $post['post_content'],
                     'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'benefits' => $meta['_tutor_course_benefits'] ?? null,
@@ -211,7 +211,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
                     'description' => $post['post_content'],
                     'author' => $meta['wbg_author'] ?? null,
                     'publisher' => $meta['wbg_publisher'] ?? null,
@@ -253,7 +253,7 @@ class MigrateFromWordPress extends Command
                 ['wp_id' => $post['ID']],
                 [
                     'title' => html_entity_decode($post['post_title']),
-                    'slug' => $post['post_name'] ?: Str::slug($post['post_title']),
+                    'slug' => Str::limit($post['post_name'] ?: Str::slug($post['post_title']), 245, ''),
                     'content' => $post['post_content'],
                     'excerpt' => strip_tags($post['post_excerpt'] ?: ''),
                     'featured_image' => $thumbnailUrl,

@@ -10,8 +10,8 @@ return new class extends Migration
     {
         Schema::create('books', function (Blueprint $table) {
             $table->id();
-            $table->string('title');
-            $table->string('slug')->unique();
+            $table->string('title', 500);
+            $table->string('slug', 255)->unique();
             $table->longText('description')->nullable();
             $table->string('author')->nullable();
             $table->string('publisher')->nullable();
