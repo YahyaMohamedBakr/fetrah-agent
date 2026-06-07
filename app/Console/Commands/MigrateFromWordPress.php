@@ -12,9 +12,14 @@ use Illuminate\Support\Str;
 
 class MigrateFromWordPress extends Command
 {
-    protected $signature = 'migrate:wordpress {--truncate : Truncate existing tables before import}';
+    protected $signature = 'migrate:wordpress
+        {--truncate : Truncate existing tables before import}
+        {--dump-file= : Path to JSON dump file (instead of DB connection)}';
 
-    protected $description = 'Migrate data from WordPress database to Fetrah platform';
+    protected $description = 'Migrate data from WordPress to Fetrah platform';
+
+    private ?array $dump = null;
+    private string $articleTitleFilter = 'فطرة';
 
     public function handle(): void
     {
@@ -28,6 +33,20 @@ class MigrateFromWordPress extends Command
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
 
+        $dumpFile = $this->option('dump-file');
+        if ($dumpFile) {
+            if (!file_exists($dumpFile)) {
+                $this->error("Dump file not found: {$dumpFile}");
+                return;
+            }
+            $this->dump = json_decode(file_get_contents($dumpFile), true);
+            if (!$this->dump) {
+                $this->error('Invalid JSON dump file.');
+                return;
+            }
+            $this->info('Loaded dump from: ' . $dumpFile);
+        }
+
         $this->info('Starting migration from WordPress...');
 
         $this->migrateCourseCategories();
@@ -39,12 +58,19 @@ class MigrateFromWordPress extends Command
         $this->info('Migration completed successfully!');
     }
 
+    protected function wpTable(string $table)
+    {
+        if ($this->dump) {
+            return collect($this->dump[$table] ?? []);
+        }
+        return DB::connection('wordpress')->table($table);
+    }
+
     protected function migrateCourseCategories(): void
     {
         $this->info('Migrating course categories...');
 
-        $categories = DB::connection('wordpress')
-            ->table('terms')
+        $categories = $this->wpTable('terms')
             ->join('term_taxonomy', 'terms.term_id', '=', 'term_taxonomy.term_id')
             ->where('term_taxonomy.taxonomy', 'course-category')
             ->select('terms.*', 'term_taxonomy.description')
@@ -75,8 +101,7 @@ class MigrateFromWordPress extends Command
     {
         $this->info('Migrating courses...');
 
-        $posts = DB::connection('wordpress')
-            ->table('posts')
+        $posts = $this->wpTable('posts')
             ->where('post_type', 'courses')
             ->where('post_status', 'publish')
             ->get();
@@ -85,14 +110,10 @@ class MigrateFromWordPress extends Command
         $bar->start();
 
         foreach ($posts as $post) {
-            $meta = DB::connection('wordpress')
-                ->table('postmeta')
-                ->where('post_id', $post->ID)
-                ->pluck('meta_value', 'meta_key');
+            $meta = $this->getPostMeta($post->ID);
 
             $categoryId = null;
-            $termRel = DB::connection('wordpress')
-                ->table('term_relationships')
+            $termRel = $this->wpTable('term_relationships')
                 ->join('term_taxonomy', 'term_relationships.term_taxonomy_id', '=', 'term_taxonomy.term_taxonomy_id')
                 ->where('term_relationships.object_id', $post->ID)
                 ->where('term_taxonomy.taxonomy', 'course-category')
@@ -106,10 +127,12 @@ class MigrateFromWordPress extends Command
             $thumbnailId = $meta['_thumbnail_id'] ?? null;
             $thumbnailUrl = null;
             if ($thumbnailId) {
-                $thumbnailPost = DB::connection('wordpress')
-                    ->table('posts')
-                    ->where('ID', $thumbnailId)
-                    ->first();
+                $thumbnailPost = collect($this->dump ? $this->dump['posts'] : null)
+                    ->firstWhere('ID', $thumbnailId);
+
+                if (!$thumbnailPost) {
+                    $thumbnailPost = $this->wpTable('posts')->where('ID', $thumbnailId)->first();
+                }
                 $thumbnailUrl = $thumbnailPost?->guid;
             }
 
@@ -143,8 +166,7 @@ class MigrateFromWordPress extends Command
     {
         $this->info('Migrating books...');
 
-        $posts = DB::connection('wordpress')
-            ->table('posts')
+        $posts = $this->wpTable('posts')
             ->where('post_type', 'books')
             ->where('post_status', 'publish')
             ->get();
@@ -153,10 +175,7 @@ class MigrateFromWordPress extends Command
         $bar->start();
 
         foreach ($posts as $post) {
-            $meta = DB::connection('wordpress')
-                ->table('postmeta')
-                ->where('post_id', $post->ID)
-                ->pluck('meta_value', 'meta_key');
+            $meta = $this->getPostMeta($post->ID);
 
             Book::updateOrCreate(
                 ['wp_id' => $post->ID],
@@ -182,24 +201,26 @@ class MigrateFromWordPress extends Command
     {
         $this->info('Migrating articles...');
 
-        $posts = DB::connection('wordpress')
-            ->table('posts')
+        $posts = $this->wpTable('posts')
             ->where('post_type', 'post')
             ->where('post_status', 'publish')
-            ->where('post_title', 'LIKE', '%فطرة%')
+            ->where('post_title', 'LIKE', '%' . $this->articleTitleFilter . '%')
             ->get();
 
         $bar = $this->output->createProgressBar(count($posts));
         $bar->start();
 
         foreach ($posts as $post) {
-            $thumbnailId = get_post_thumbnail_id_wordpress($post->ID);
             $thumbnailUrl = null;
+            $thumbnailId = $this->getPostMetaValue($post->ID, '_thumbnail_id');
+
             if ($thumbnailId) {
-                $thumbPost = DB::connection('wordpress')
-                    ->table('posts')
-                    ->where('ID', $thumbnailId)
-                    ->first();
+                $thumbPost = collect($this->dump ? $this->dump['posts'] : null)
+                    ->firstWhere('ID', $thumbnailId);
+
+                if (!$thumbPost && !$this->dump) {
+                    $thumbPost = $this->wpTable('posts')->where('ID', $thumbnailId)->first();
+                }
                 $thumbnailUrl = $thumbPost?->guid;
             }
 
@@ -222,16 +243,25 @@ class MigrateFromWordPress extends Command
         $this->newLine();
         $this->info('Migrated ' . count($posts) . ' articles.');
     }
-}
 
-if (!function_exists('get_post_thumbnail_id_wordpress')) {
-    function get_post_thumbnail_id_wordpress($postId): ?string
+    private function getPostMeta($postId): array
     {
-        $meta = DB::connection('wordpress')
+        if ($this->dump) {
+            $rows = collect($this->dump['postmeta'] ?? [])
+                ->where('post_id', $postId);
+            return $rows->pluck('meta_value', 'meta_key')->toArray();
+        }
+
+        return DB::connection('wordpress')
             ->table('postmeta')
             ->where('post_id', $postId)
-            ->where('meta_key', '_thumbnail_id')
-            ->first();
-        return $meta?->meta_value;
+            ->pluck('meta_value', 'meta_key')
+            ->toArray();
+    }
+
+    private function getPostMetaValue($postId, string $key): ?string
+    {
+        $meta = $this->getPostMeta($postId);
+        return $meta[$key] ?? null;
     }
 }
