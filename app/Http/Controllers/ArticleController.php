@@ -12,4 +12,11 @@ class ArticleController extends Controller
             'articles' => Article::latest('published_at')->get(),
         ]);
     }
+
+    public function show(string $slug)
+    {
+        $article = Article::where('slug', $slug)->firstOrFail();
+
+        return view('articles.show', compact('article'));
+    }
 }

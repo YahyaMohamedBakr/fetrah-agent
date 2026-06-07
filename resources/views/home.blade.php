@@ -114,7 +114,7 @@
                                         {{ $course->price }} ريال
                                         @endif
                                     </span>
-                                    <a href="#" class="text-sm font-medium text-primary-500 hover:text-primary-600">عرض التفاصيل ←</a>
+                                    <a href="{{ route('courses.show', $course->slug) }}" class="text-sm font-medium text-primary-500 hover:text-primary-600">عرض التفاصيل ←</a>
                                 </div>
                             </div>
                         </div>
@@ -171,7 +171,7 @@
                             <p class="text-sm text-gray-500 line-clamp-2">{{ $article->excerpt ? strip_tags($article->excerpt) : strip_tags(substr($article->content ?? '', 0, 200)) }}</p>
                             <div class="flex items-center justify-between mt-4 text-sm">
                                 <span class="text-gray-400">{{ $article->published_at ? \Carbon\Carbon::parse($article->published_at)->format('Y-m-d') : '' }}</span>
-                                <a href="#" class="text-primary-500 hover:text-primary-600 font-medium">قراءة ←</a>
+                                <a href="{{ route('articles.show', $article->slug) }}" class="text-primary-500 hover:text-primary-600 font-medium">قراءة ←</a>
                             </div>
                         </div>
                         @endforeach

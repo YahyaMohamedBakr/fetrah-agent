@@ -43,7 +43,7 @@
                     <div class="flex items-center gap-2 text-sm text-gray-400">
                         <span>{{ $course->total_lessons }} درس</span>
                     </div>
-                    <a href="#" class="text-sm font-medium text-primary-500 hover:text-primary-600">عرض التفاصيل ←</a>
+                    <a href="{{ route('courses.show', $course->slug) }}" class="text-sm font-medium text-primary-500 hover:text-primary-600">عرض التفاصيل ←</a>
                 </div>
             </div>
         </div>

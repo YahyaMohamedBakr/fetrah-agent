@@ -21,4 +21,11 @@ class CourseController extends Controller
             'categories' => Category::where('type', 'course')->get(),
         ]);
     }
+
+    public function show(string $slug)
+    {
+        $course = Course::with('category')->where('slug', $slug)->firstOrFail();
+
+        return view('courses.show', compact('course'));
+    }
 }

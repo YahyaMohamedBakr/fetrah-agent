@@ -16,7 +16,9 @@
                 <span class="text-6xl">📖</span>
             </div>
             <div class="p-4">
-                <h3 class="font-semibold text-gray-900 mb-1 group-hover:text-primary-500 transition">{{ $book->title }}</h3>
+                <a href="{{ route('books.show', $book->slug) }}" class="block">
+                    <h3 class="font-semibold text-gray-900 mb-1 group-hover:text-primary-500 transition">{{ $book->title }}</h3>
+                </a>
                 <p class="text-sm text-gray-500 mb-2">{{ $book->author }}</p>
                 @if($book->publisher)
                 <p class="text-xs text-gray-400 mb-3">{{ $book->publisher }}</p>

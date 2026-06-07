@@ -12,4 +12,11 @@ class BookController extends Controller
             'books' => Book::all(),
         ]);
     }
+
+    public function show(string $slug)
+    {
+        $book = Book::where('slug', $slug)->firstOrFail();
+
+        return view('books.show', compact('book'));
+    }
 }
