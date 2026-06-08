@@ -15,4 +15,7 @@ Route::get('/books/{slug}', [BookController::class, 'show'])->name('books.show')
 Route::get('/articles', [ArticleController::class, 'index'])->name('articles.index');
 Route::get('/articles/{slug}', [ArticleController::class, 'show'])->name('articles.show');
 
+Route::get('/consultations', [ConsultationController::class, 'index'])->name('consultations.index');
+Route::post('/consultations', [ConsultationController::class, 'store'])->name('consultations.store');
+
 Route::post('/api/agent/chat', [App\Http\Controllers\API\AIAgentController::class, 'chat']);

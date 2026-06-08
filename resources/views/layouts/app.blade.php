@@ -57,7 +57,7 @@
                     <a href="{{ route('courses.index') }}" class="text-gray-600 hover:text-primary-500 transition font-medium">الكورسات</a>
                     <a href="{{ route('books.index') }}" class="text-gray-600 hover:text-primary-500 transition font-medium">الكتب</a>
                     <a href="{{ route('articles.index') }}" class="text-gray-600 hover:text-primary-500 transition font-medium">المقالات</a>
-                    <a href="#" class="text-gray-600 hover:text-primary-500 transition font-medium">الاستشارات</a>
+                    <a href="{{ route('consultations.index') }}" class="text-gray-600 hover:text-primary-500 transition font-medium">الاستشارات</a>
                 </div>
                 <div class="flex items-center gap-3">
                     <a href="#" class="px-4 py-2 text-sm font-medium text-primary-500 border border-primary-500 rounded-lg hover:bg-primary-50 transition">تسجيل الدخول</a>

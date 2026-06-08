@@ -150,11 +150,15 @@
 
                 <!-- Consultations Tab -->
                 <div x-show="activeTab === 'consultations'" x-cloak>
-                    <div class="text-center py-12">
+                    <div class="text-center py-8">
                         <span class="text-5xl mb-4 block">💬</span>
                         <h2 class="text-2xl font-bold text-gray-900 mb-3">الاستشارات</h2>
-                        <p class="text-gray-500 max-w-md mx-auto mb-6">قريباً.. خدمة الاستشارات مع متخصصين معتمدين في مختلف المجالات</p>
-                        <div class="w-16 h-1 bg-primary-300 mx-auto rounded-full"></div>
+                        <p class="text-gray-500 max-w-md mx-auto mb-6">استشارات مع متخصصين معتمدين في المجالات التربوية والأسرية والنفسية والشرعية</p>
+                        <a href="{{ route('consultations.index') }}"
+                           class="inline-block px-8 py-3 bg-primary-500 text-white font-medium rounded-xl hover:bg-primary-600 transition shadow-sm">
+                            احجز استشارتك الآن
+                        </a>
+                        <div class="w-16 h-1 bg-primary-300 mx-auto rounded-full mt-8"></div>
                     </div>
                 </div>
 
